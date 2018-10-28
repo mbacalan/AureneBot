@@ -3,3 +3,4 @@ bot_config.json
 .eslintrc.json
 giveawayData.json
 giveawayData.sqlite
+.env
