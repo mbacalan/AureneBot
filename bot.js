@@ -1,11 +1,13 @@
 const fs = require("fs");
 const discord = require("discord.js");
-const mongoose = require("mongoose");
 const moment = require("moment");
+const { db } = require("./utils/db");
 const commandFiles = fs.readdirSync("./commands");
 const { endGiveaway } = require("./utils/general");
-const { Giveaway } = require("./dbModels/models");
+const { Giveaway, Build } = require("./dbModels/models");
 const logger = require("./utils/logger");
+const { buildDbFromApi } = require("./utils/caching");
+const { gw2api } = require("./utils/api");
 
 const bot = new discord.Client();
 
@@ -17,21 +19,33 @@ for (const file of commandFiles) {
   bot.commands.set(command.name, command);
 }
 
-mongoose.connect(process.env.MONGODB_URI || "mongodb://localhost:27017/local", ({
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}));
-
-const db = mongoose.connection;
-
 db.on("error", () => logger.error("Error connecting to database"));
 db.once("open", () => logger.info("Successfully connected to database"));
 
 bot.on("ready", async () => {
+  setInterval(async () => {
+    const currentBuild = await Build.findOne({});
+    const liveBuild = await gw2api.build().get();
+
+    if (!currentBuild.build) {
+      Build.create({
+        build: liveBuild,
+      });
+    }
+
+    if (currentBuild != liveBuild) {
+      await bot.user.setStatus("dnd");
+      await bot.user.setActivity("Building API Cache", { type: "LISTENING" });
+      await buildDbFromApi();
+      await bot.user.setStatus("online");
+      await bot.user.setActivity("Guild Wars 2");
+    }
+  }, 300000);
+
   const giveawayChannel = bot.channels.get(process.env.GIVEAWAY_CHANNEL);
   const giveaway = await Giveaway.find({});
 
-  bot.user.setActivity("Guild Wars 2");
+  await bot.user.setActivity("Guild Wars 2");
 
   const logs = [
     `Logged in as ${bot.user.username}#${bot.user.discriminator} (ID:${bot.user.id})`,
